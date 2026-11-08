@@ -98,6 +98,60 @@ var openListTools = []tool{
 			Required: []string{"path"},
 		},
 	},
+	{
+		Name:        "openlist.fs.add_offline_download",
+		Title:       "OpenList Add Offline Download",
+		Description: "Create offline download tasks into a writable mount directory (same semantics as POST /api/fs/add_offline_download).",
+		InputSchema: toolInputSchema{
+			Type: "object",
+			Properties: map[string]schemaProperty{
+				"urls": {
+					Type:        "array",
+					Description: "One or more download URLs (magnet/http/etc. depending on configured tools).",
+				},
+				"path": {
+					Type:        "string",
+					Description: "Destination directory mount path.",
+				},
+				"tool": {
+					Type:        "string",
+					Description: "Offline download tool name, for example \"SimpleHttp\", \"aria2\", \"qBittorrent\".",
+				},
+				"delete_policy": {
+					Type:        "string",
+					Description: "Temp-file delete policy: delete_on_upload_succeed, delete_on_upload_failed, delete_never, delete_always, upload_download_stream.",
+				},
+			},
+			Required: []string{"urls", "path"},
+		},
+	},
+	{
+		Name:        "openlist.fs.upload",
+		Title:       "OpenList FS Upload Guide",
+		Description: "Validate upload permission and return streaming PUT instructions for /api/fs/put. Does not accept file bytes over MCP.",
+		InputSchema: toolInputSchema{
+			Type: "object",
+			Properties: map[string]schemaProperty{
+				"path": {
+					Type:        "string",
+					Description: "Full destination file mount path, for example \"/movies/demo.mp4\".",
+				},
+				"as_task": {
+					Type:        "boolean",
+					Description: "When true, upload runs as a background task (As-Task header).",
+				},
+				"overwrite": {
+					Type:        "boolean",
+					Description: "When false, refuse if the file already exists. Defaults to true.",
+				},
+				"password": {
+					Type:        "string",
+					Description: "Optional password for protected parent directories.",
+				},
+			},
+			Required: []string{"path"},
+		},
+	},
 }
 
 func (s *Server) handleToolsList(req request) response {

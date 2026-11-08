@@ -45,6 +45,10 @@ func (s *Server) handleToolsCall(c *gin.Context, req request) (int, response) {
 		result, err = s.callFSGet(c, params.Arguments)
 	case "openlist.fs.link":
 		result, err = s.callFSLink(c, params.Arguments)
+	case "openlist.fs.add_offline_download":
+		result, err = s.callFSAddOfflineDownload(c, params.Arguments)
+	case "openlist.fs.upload":
+		result, err = s.callFSUpload(c, params.Arguments)
 	default:
 		return http.StatusOK, response{
 			JSONRPC: "2.0",

@@ -85,7 +85,7 @@ func TestToolsListSuccess(t *testing.T) {
 		t.Fatalf("unexpected result type: %T", resp.Result)
 	}
 	tools, ok := result["tools"].([]any)
-	if !ok || len(tools) != 3 {
+	if !ok || len(tools) != 5 {
 		t.Fatalf("unexpected tools payload: %#v", result["tools"])
 	}
 	names := map[string]bool{}
@@ -97,7 +97,8 @@ func TestToolsListSuccess(t *testing.T) {
 		name, _ := currentTool["name"].(string)
 		names[name] = true
 	}
-	if !names["openlist.fs.list"] || !names["openlist.fs.get"] || !names["openlist.fs.link"] {
+	if !names["openlist.fs.list"] || !names["openlist.fs.get"] || !names["openlist.fs.link"] ||
+		!names["openlist.fs.add_offline_download"] || !names["openlist.fs.upload"] {
 		t.Fatalf("unexpected tool names: %#v", names)
 	}
 }

@@ -65,6 +65,11 @@ func getTaskInfos[T task.TaskExtensionInfo](tasks []T) []TaskInfo {
 	return utils.MustSliceConvert(tasks, getTaskInfo[T])
 }
 
+// TaskInfos converts task objects into the public task info payload used by HTTP APIs.
+func TaskInfos[T task.TaskExtensionInfo](tasks []T) []TaskInfo {
+	return getTaskInfos(tasks)
+}
+
 func argsContains[T comparable](v T, slice ...T) bool {
 	return utils.SliceContains(slice, v)
 }

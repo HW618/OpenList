@@ -124,7 +124,8 @@ func (d *FtpMainDriver) AuthUser(cc ftpserver.ClientContext, user, pass string) 
 	if user == "anonymous" || user == "guest" {
 		userObj, err = op.GetGuest()
 		if err != nil {
-			return nil, err
+			utils.Log.Errorf("ftp guest auth failed: %+v", err)
+			return nil, protocolAuthError(err)
 		}
 	} else {
 		userObj, err = op.GetUserByName(user)

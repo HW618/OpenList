@@ -2,7 +2,6 @@ package handles
 
 import (
 	"crypto/md5"
-	"errors"
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
@@ -17,6 +16,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"gorm.io/gorm"
 
 	"github.com/OpenListTeam/OpenList/v4/internal/conf"
 	"github.com/OpenListTeam/OpenList/v4/internal/db"
@@ -488,6 +488,28 @@ func embyDatabaseBusy(c *gin.Context) {
 	c.Abort()
 }
 
+// embyRespondAuthLookupError maps user-lookup failures the same way as
+// ClassifyAuthError: only credential-class errors inflate media lockout.
+func embyRespondAuthLookupError(c *gin.Context, err error, username string) {
+	failure := common.ClassifyAuthError(err)
+	if failure.CountAsAuthFailure {
+		if username != "" {
+			mediaAuthFailedFor(c, username)
+		} else {
+			mediaAuthFailed(c)
+		}
+	}
+	switch {
+	case failure.Code == 503:
+		embyDatabaseBusy(c)
+	case failure.Code >= 500:
+		c.JSON(500, gin.H{"Error": failure.Message})
+		c.Abort()
+	default:
+		embyUnauthorized(c)
+	}
+}
+
 // embyUserGUID 返回给客户端的用户 ID（Emby 规范为 32 位 hex GUID）
 func embyUserGUID(id uint) string {
 	return embyGUID("user-" + strconv.FormatUint(uint64(id), 10))
@@ -507,7 +529,7 @@ func embyResolveUserID(idStr string) (uint, error) {
 			return users[i].ID, nil
 		}
 	}
-	return 0, errors.New("unknown emby user")
+	return 0, gorm.ErrRecordNotFound
 }
 
 // embyUserConfiguration Emby UserConfiguration 的默认值。
@@ -1019,12 +1041,7 @@ func embyAuthenticateByName(c *gin.Context) {
 	}
 	user, err := op.GetUserByName(username)
 	if err != nil {
-		if errs.IsDatabaseBusy(err) {
-			c.JSON(503, gin.H{"Error": model.DatabaseTemporarilyUnavailable})
-			return
-		}
-		mediaAuthFailedFor(c, username)
-		embyUnauthorized(c)
+		embyRespondAuthLookupError(c, err, username)
 		return
 	}
 	if user.Disabled || user.IsGuest() {
@@ -1043,21 +1060,12 @@ func embyAuthenticateByID(c *gin.Context, idStr string) {
 	}
 	id, err := embyResolveUserID(idStr)
 	if err != nil {
-		if errs.IsDatabaseBusy(err) {
-			embyDatabaseBusy(c)
-			return
-		}
-		embyUnauthorized(c)
+		embyRespondAuthLookupError(c, err, "")
 		return
 	}
 	user, err := op.GetUserById(id)
 	if err != nil {
-		if errs.IsDatabaseBusy(err) {
-			c.JSON(503, gin.H{"Error": model.DatabaseTemporarilyUnavailable})
-			return
-		}
-		mediaAuthFailed(c)
-		embyUnauthorized(c)
+		embyRespondAuthLookupError(c, err, "")
 		return
 	}
 	if user.Disabled || user.IsGuest() {
@@ -1082,8 +1090,10 @@ func embyAuthenticateByID(c *gin.Context, idStr string) {
 // 密码位置既接受 OpenList 登录密码（无 2FA 时），也接受属于该用户的应用密钥。
 func embyCompleteAuth(c *gin.Context, user *model.User, pw string) {
 	keyUser, _, keyErr := LookUpAppKeyUser(pw)
-	if errs.IsDatabaseBusy(keyErr) {
-		embyDatabaseBusy(c)
+	// Infra/DB failures must not fall through to password checks (which would
+	// inflate lockout). Credential misses from LookUpAppKeyUser still may.
+	if keyErr != nil && common.ClassifyAuthError(keyErr).Code >= 500 {
+		embyRespondAuthLookupError(c, keyErr, "")
 		return
 	}
 	keyOK := keyErr == nil
@@ -1191,8 +1201,8 @@ func embyGetUser(c *gin.Context, idStr string, current *model.User) {
 	}
 	id, err := embyResolveUserID(idStr)
 	if err != nil {
-		if errs.IsDatabaseBusy(err) {
-			embyDatabaseBusy(c)
+		if common.ClassifyAuthError(err).Code >= 500 {
+			embyRespondAuthLookupError(c, err, "")
 			return
 		}
 		embyNotFound(c)
@@ -1200,8 +1210,8 @@ func embyGetUser(c *gin.Context, idStr string, current *model.User) {
 	}
 	user, err := op.GetUserById(id)
 	if err != nil {
-		if errs.IsDatabaseBusy(err) {
-			embyDatabaseBusy(c)
+		if common.ClassifyAuthError(err).Code >= 500 {
+			embyRespondAuthLookupError(c, err, "")
 			return
 		}
 		embyNotFound(c)

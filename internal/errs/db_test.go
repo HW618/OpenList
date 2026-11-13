@@ -22,6 +22,8 @@ func TestIsDatabaseBusy(t *testing.T) {
 		{"locked", errors.New("failed update storage in database: database is locked (5) (SQLITE_BUSY)"), true},
 		{"nested tx", errors.New("SQL logic error: cannot start a transaction within a transaction (1)"), true},
 		{"table locked", errors.New("database table is locked"), true},
+		{"sqlite_locked token", errors.New("SQL logic error: SQLITE_LOCKED"), true},
+		{"schema locked", errors.New("database schema is locked"), true},
 		{"pkg wrap locked", pkgerr.Wrap(errors.New("database is locked (5)"), "failed find user"), true},
 		{"record not found", gorm.ErrRecordNotFound, false},
 	}

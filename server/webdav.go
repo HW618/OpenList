@@ -75,7 +75,11 @@ func WebDAVAuth(c *gin.Context) {
 				admin, err := op.GetAdmin()
 				if err != nil {
 					log.Errorf("[webdav auth] failed get admin user: %+v", err)
-					c.Status(http.StatusInternalServerError)
+					status := http.StatusInternalServerError
+					if errs.IsDatabaseBusy(err) {
+						status = http.StatusServiceUnavailable
+					}
+					c.Status(status)
 					c.Abort()
 					return
 				}

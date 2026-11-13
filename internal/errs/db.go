@@ -25,7 +25,9 @@ func IsDatabaseBusy(err error) bool {
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "database is locked") ||
 		strings.Contains(msg, "database table is locked") ||
+		strings.Contains(msg, "database schema is locked") ||
 		strings.Contains(msg, "sqlite_busy") ||
+		strings.Contains(msg, "sqlite_locked") ||
 		strings.Contains(msg, "cannot start a transaction within a transaction")
 }
 

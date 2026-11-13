@@ -40,3 +40,29 @@ func TestClassifyAuthErrorCredentialFailures(t *testing.T) {
 		}
 	}
 }
+
+func TestClassifyAuthErrorLdapUnmatchedUserIsCredentialFailure(t *testing.T) {
+	// HandleLdapLogin must mark "no matching LDAP user" as auth failure so
+	// WebDAV/FTP/SFTP keep 401 + lockout counting (not 500).
+	err := ldapUnmatchedUserError()
+	if !errors.Is(err, ErrFailedLdapAuth) {
+		t.Fatalf("ldapUnmatchedUserError() = %v, want ErrFailedLdapAuth", err)
+	}
+	got := ClassifyAuthError(err)
+	if got.Code != 401 || got.Message != model.InvalidUsernameOrPassword || !got.CountAsAuthFailure {
+		t.Fatalf("ClassifyAuthError(ldap unmatched) = %+v, want 401 counted failure", got)
+	}
+}
+
+func TestClassifyAuthErrorLdapInfrastructureRemainsServerError(t *testing.T) {
+	for _, err := range []error{
+		pkgerr.WithMessagef(errors.New("connection refused"), "failed to connect to LDAP"),
+		pkgerr.WithMessagef(errors.New("invalid credentials"), "failed to bind to LDAP"),
+		pkgerr.WithMessagef(errors.New("timeout"), "failed login ldap: LDAP search failed"),
+	} {
+		got := ClassifyAuthError(err)
+		if got.Code != 500 || got.CountAsAuthFailure {
+			t.Fatalf("ClassifyAuthError(%v) = %+v, want 500 uncounted", err, got)
+		}
+	}
+}

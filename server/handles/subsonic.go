@@ -509,7 +509,11 @@ func subHasCredential(c *gin.Context) bool {
 func subAuthInner(c *gin.Context) (*model.User, *model.MediaAppKey, error) {
 	// OpenSubsonic apiKey 扩展：直接把应用密钥放在 apiKey 参数里
 	if key := strings.TrimSpace(subParam(c, "apiKey")); key != "" {
-		if u, k, ok := subAuthByAppKey(key); ok {
+		u, k, err := subAuthByAppKey(key)
+		if errs.IsDatabaseBusy(err) {
+			return nil, nil, err
+		}
+		if err == nil {
 			return u, k, nil
 		}
 		return nil, nil, errs.WrongPassword
@@ -519,7 +523,11 @@ func subAuthInner(c *gin.Context) (*model.User, *model.MediaAppKey, error) {
 	// 用户名留空、只填了应用密钥（部分客户端只允许填一个"密码"字段）
 	if username == "" {
 		if password != "" {
-			if u, k, ok := subAuthByAppKey(password); ok {
+			u, k, err := subAuthByAppKey(password)
+			if errs.IsDatabaseBusy(err) {
+				return nil, nil, err
+			}
+			if err == nil {
 				return u, k, nil
 			}
 		}
@@ -535,7 +543,10 @@ func subAuthInner(c *gin.Context) (*model.User, *model.MediaAppKey, error) {
 	// t+s：用应用密钥的明文做 md5(密码+salt) 校验（Subsonic token 认证）
 	if salt := subParam(c, "s"); salt != "" {
 		if token := subParam(c, "t"); token != "" {
-			keys, _ := db.ListMediaAppKeys(user.ID)
+			keys, err := db.ListMediaAppKeys(user.ID)
+			if errs.IsDatabaseBusy(err) {
+				return nil, nil, err
+			}
 			for i := range keys {
 				plain, err := media.DecryptAppKey(keys[i].Secret)
 				if err != nil {
@@ -556,7 +567,11 @@ func subAuthInner(c *gin.Context) (*model.User, *model.MediaAppKey, error) {
 			user.ValidateRawPassword(password) == nil {
 			return user, nil, nil
 		}
-		if u, k, ok := subAuthByAppKey(password); ok && u.ID == user.ID {
+		u, k, err := subAuthByAppKey(password)
+		if errs.IsDatabaseBusy(err) {
+			return nil, nil, err
+		}
+		if err == nil && u.ID == user.ID {
 			return u, k, nil
 		}
 	}
@@ -574,7 +589,7 @@ func decodeSubsonicPassword(p string) string {
 	return p
 }
 
-func subAuthByAppKey(key string) (*model.User, *model.MediaAppKey, bool) {
+func subAuthByAppKey(key string) (*model.User, *model.MediaAppKey, error) {
 	return LookUpAppKeyUser(key)
 }
 

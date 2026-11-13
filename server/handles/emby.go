@@ -2,6 +2,7 @@ package handles
 
 import (
 	"crypto/md5"
+	"errors"
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
@@ -459,16 +460,32 @@ func embyAuth(c *gin.Context) (*model.User, bool) {
 	if dev, err := db.GetEmbyDeviceByTokenHash(media.HashToken(token)); err == nil {
 		db.TouchEmbyDevice(dev.ID)
 		user, err := op.GetUserById(dev.UserID)
+		if errs.IsDatabaseBusy(err) {
+			embyDatabaseBusy(c)
+			return nil, false
+		}
 		if err != nil || user.Disabled {
 			return nil, false
 		}
 		return user, true
+	} else if errs.IsDatabaseBusy(err) {
+		embyDatabaseBusy(c)
+		return nil, false
 	}
-	user, _, ok := LookUpAppKeyUser(token)
-	if !ok {
+	user, _, err := LookUpAppKeyUser(token)
+	if errs.IsDatabaseBusy(err) {
+		embyDatabaseBusy(c)
+		return nil, false
+	}
+	if err != nil {
 		return nil, false
 	}
 	return user, true
+}
+
+func embyDatabaseBusy(c *gin.Context) {
+	c.JSON(503, gin.H{"Error": model.DatabaseTemporarilyUnavailable})
+	c.Abort()
 }
 
 // embyUserGUID 返回给客户端的用户 ID（Emby 规范为 32 位 hex GUID）
@@ -477,20 +494,20 @@ func embyUserGUID(id uint) string {
 }
 
 // embyResolveUserID 兼容数字 ID 与 GUID 两种形式
-func embyResolveUserID(idStr string) (uint, bool) {
+func embyResolveUserID(idStr string) (uint, error) {
 	if n, err := strconv.ParseUint(idStr, 10, 64); err == nil {
-		return uint(n), true
+		return uint(n), nil
 	}
 	users, _, err := op.GetUsers(1, -1)
 	if err != nil {
-		return 0, false
+		return 0, err
 	}
 	for i := range users {
 		if embyUserGUID(users[i].ID) == idStr {
-			return users[i].ID, true
+			return users[i].ID, nil
 		}
 	}
-	return 0, false
+	return 0, errors.New("unknown emby user")
 }
 
 // embyUserConfiguration Emby UserConfiguration 的默认值。
@@ -668,7 +685,7 @@ func EmbyAPI(c *gin.Context) {
 	case len(lower) >= 2 && lower[0] == "sessions" && lower[1] == "playing":
 		if user, ok := embyAuth(c); ok {
 			embySessionPlaying(c, user, strings.Join(lower[2:], "/"))
-		} else {
+		} else if !c.IsAborted() {
 			c.Status(204)
 		}
 		return
@@ -698,7 +715,9 @@ func EmbyAPI(c *gin.Context) {
 
 	user, ok := embyAuth(c)
 	if !ok {
-		embyUnauthorized(c)
+		if !c.IsAborted() {
+			embyUnauthorized(c)
+		}
 		return
 	}
 
@@ -1022,8 +1041,12 @@ func embyAuthenticateByID(c *gin.Context, idStr string) {
 		c.JSON(429, gin.H{"Error": model.TooManyAttempts})
 		return
 	}
-	id, ok := embyResolveUserID(idStr)
-	if !ok {
+	id, err := embyResolveUserID(idStr)
+	if err != nil {
+		if errs.IsDatabaseBusy(err) {
+			embyDatabaseBusy(c)
+			return
+		}
 		embyUnauthorized(c)
 		return
 	}
@@ -1058,7 +1081,12 @@ func embyAuthenticateByID(c *gin.Context, idStr string) {
 // embyCompleteAuth 校验密码并签发设备令牌。
 // 密码位置既接受 OpenList 登录密码（无 2FA 时），也接受属于该用户的应用密钥。
 func embyCompleteAuth(c *gin.Context, user *model.User, pw string) {
-	keyUser, _, keyOK := LookUpAppKeyUser(pw)
+	keyUser, _, keyErr := LookUpAppKeyUser(pw)
+	if errs.IsDatabaseBusy(keyErr) {
+		embyDatabaseBusy(c)
+		return
+	}
+	keyOK := keyErr == nil
 	switch {
 	case keyOK && keyUser.ID == user.ID:
 		// 应用密钥认证通过，2FA 账号也允许（密钥本身即第二因素）
@@ -1161,13 +1189,21 @@ func embyGetUser(c *gin.Context, idStr string, current *model.User) {
 		c.JSON(200, embyUserDtoOf(current))
 		return
 	}
-	id, ok := embyResolveUserID(idStr)
-	if !ok {
+	id, err := embyResolveUserID(idStr)
+	if err != nil {
+		if errs.IsDatabaseBusy(err) {
+			embyDatabaseBusy(c)
+			return
+		}
 		embyNotFound(c)
 		return
 	}
 	user, err := op.GetUserById(id)
 	if err != nil {
+		if errs.IsDatabaseBusy(err) {
+			embyDatabaseBusy(c)
+			return
+		}
 		embyNotFound(c)
 		return
 	}

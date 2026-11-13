@@ -9,6 +9,7 @@ import (
 	"github.com/OpenListTeam/OpenList/v4/internal/authn"
 	"github.com/OpenListTeam/OpenList/v4/internal/conf"
 	"github.com/OpenListTeam/OpenList/v4/internal/db"
+	"github.com/OpenListTeam/OpenList/v4/internal/errs"
 	"github.com/OpenListTeam/OpenList/v4/internal/model"
 	"github.com/OpenListTeam/OpenList/v4/internal/op"
 	"github.com/OpenListTeam/OpenList/v4/internal/setting"
@@ -109,6 +110,10 @@ func FinishAuthnLogin(c *gin.Context) {
 		}, sessionData, c.Request)
 	}
 	if err != nil {
+		if errs.IsDatabaseBusy(err) {
+			common.ErrorUserLookupResp(c, err)
+			return
+		}
 		common.ErrorResp(c, err, 400)
 		return
 	}

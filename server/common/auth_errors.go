@@ -7,6 +7,7 @@ import (
 	"github.com/OpenListTeam/OpenList/v4/internal/model"
 	"github.com/gin-gonic/gin"
 	pkgerr "github.com/pkg/errors"
+	log "github.com/sirupsen/logrus"
 )
 
 // AuthFailure describes how an authentication path should treat a failure.
@@ -39,6 +40,7 @@ func ClassifyAuthError(err error) AuthFailure {
 		}
 	}
 	if errs.IsRecordNotFound(err) ||
+		errors.Is(err, errs.EmptyUsername) ||
 		errors.Is(err, errs.WrongPassword) ||
 		errors.Is(err, errs.EmptyPassword) ||
 		errors.Is(err, ErrFailedLdapAuth) ||
@@ -51,7 +53,7 @@ func ClassifyAuthError(err error) AuthFailure {
 	}
 	return AuthFailure{
 		Code:               500,
-		Message:            err.Error(),
+		Message:            "internal server error",
 		CountAsAuthFailure: false,
 	}
 }
@@ -59,10 +61,22 @@ func ClassifyAuthError(err error) AuthFailure {
 // ErrorUserLookupResp writes a JSON API error for a failed user lookup.
 func ErrorUserLookupResp(c *gin.Context, err error) AuthFailure {
 	failure := ClassifyUserLookupError(err)
-	if failure.Code == 500 {
-		ErrorResp(c, err, failure.Code, true)
-		return failure
+	if failure.Code >= 500 {
+		// Log the driver error server-side. Unauthenticated clients only see
+		// the generic message from ClassifyAuthError.
+		log.Errorf("auth lookup failed: %+v", err)
 	}
-	ErrorStrResp(c, failure.Message, failure.Code, failure.Code >= 500)
+	ErrorStrResp(c, failure.Message, failure.Code)
 	return failure
+}
+
+// ErrorDatabaseOrInternal maps lock contention to 503 and hides other
+// database errors from the client.
+func ErrorDatabaseOrInternal(c *gin.Context, err error) {
+	if errs.IsDatabaseBusy(err) {
+		ErrorUserLookupResp(c, err)
+		return
+	}
+	log.Errorf("internal auth error: %+v", err)
+	ErrorStrResp(c, "internal server error", 500)
 }

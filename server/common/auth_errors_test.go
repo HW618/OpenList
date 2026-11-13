@@ -27,8 +27,18 @@ func TestClassifyUserLookupError(t *testing.T) {
 	}
 
 	other := ClassifyUserLookupError(errors.New("disk I/O error"))
-	if other.Code != 500 || other.CountAsAuthFailure {
+	if other.Code != 500 || other.CountAsAuthFailure || other.Message != "internal server error" {
 		t.Fatalf("other = %+v", other)
+	}
+	if other.Message == "disk I/O error" {
+		t.Fatal("client message leaked the database error")
+	}
+}
+
+func TestClassifyAuthErrorEmptyUsernameIsCredentialFailure(t *testing.T) {
+	got := ClassifyAuthError(errs.EmptyUsername)
+	if got.Code != 401 || got.Message != model.InvalidUsernameOrPassword || !got.CountAsAuthFailure {
+		t.Fatalf("ClassifyAuthError(empty username) = %+v, want 401 counted failure", got)
 	}
 }
 

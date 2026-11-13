@@ -174,7 +174,7 @@ func tryLogin(username, password string) (*model.User, error) {
 		if err != nil && setting.GetBool(conf.LdapLoginEnabled) && user.AllowLdap {
 			err = common.HandleLdapLogin(username, password)
 		}
-	} else if setting.GetBool(conf.LdapLoginEnabled) && model.CanWebdavRead(int32(setting.GetInt(conf.LdapDefaultPermission, 0))) {
+	} else if canLdapAutoRegister(err) && setting.GetBool(conf.LdapLoginEnabled) && model.CanWebdavRead(int32(setting.GetInt(conf.LdapDefaultPermission, 0))) {
 		user, err = tryLdapLoginAndRegister(username, password)
 	}
 	return user, err

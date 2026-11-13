@@ -110,7 +110,7 @@ func (d *SftpDriver) PasswordAuth(conn ssh.ConnMetadata, password []byte) (*ssh.
 		if err != nil && setting.GetBool(conf.LdapLoginEnabled) && userObj.AllowLdap {
 			err = common.HandleLdapLogin(conn.User(), pass)
 		}
-	} else if setting.GetBool(conf.LdapLoginEnabled) && model.CanFTPAccess(int32(setting.GetInt(conf.LdapDefaultPermission, 0))) {
+	} else if canLdapAutoRegister(err) && setting.GetBool(conf.LdapLoginEnabled) && model.CanFTPAccess(int32(setting.GetInt(conf.LdapDefaultPermission, 0))) {
 		userObj, err = tryLdapLoginAndRegister(conn.User(), pass)
 	}
 	if err != nil {
@@ -118,10 +118,10 @@ func (d *SftpDriver) PasswordAuth(conn ssh.ConnMetadata, password []byte) (*ssh.
 		if failure.CountAsAuthFailure {
 			model.LoginCache.Set(ip, count+1)
 		}
-		if errs.IsDatabaseBusy(err) {
-			return nil, errs.ErrDatabaseBusy
+		if failure.Code >= 500 {
+			utils.Log.Errorf("sftp auth failed: %+v", err)
 		}
-		return nil, err
+		return nil, protocolAuthError(err)
 	}
 	if userObj.Disabled || !userObj.CanFTPAccess() {
 		model.LoginCache.Set(ip, count+1)
